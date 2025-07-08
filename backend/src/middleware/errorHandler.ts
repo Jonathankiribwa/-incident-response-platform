@@ -10,7 +10,7 @@ export const errorHandler = (
   error: AppError,
   req: Request,
   res: Response,
-  next: NextFunction
+  _next: NextFunction // Renamed to _next to indicate it's unused
 ): void => {
   const statusCode = error.statusCode || 500;
   const message = error.message || 'Internal Server Error';
@@ -49,7 +49,13 @@ export const notFoundHandler = (
   next(error);
 };
 
-export const asyncHandler = (fn: Function) => {
+type ExpressAsyncHandler = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => Promise<void> | void;
+
+export const asyncHandler = (fn: ExpressAsyncHandler) => {
   return (req: Request, res: Response, next: NextFunction) => {
     Promise.resolve(fn(req, res, next)).catch(next);
   };

@@ -81,7 +81,7 @@ export const closeKafka = async (): Promise<void> => {
 // Helper function to send messages to Kafka
 export const sendKafkaMessage = async (
   topic: string,
-  message: any,
+  message: Record<string, unknown> | unknown[] | string | number | boolean,
   key?: string
 ): Promise<void> => {
   try {

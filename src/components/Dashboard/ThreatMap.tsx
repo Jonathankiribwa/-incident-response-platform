@@ -21,6 +21,21 @@ interface ThreatMapProps {
   onNodeClick?: (node: ThreatNode) => void;
 }
 
+// Moved outside the component for stability
+const severityColors = {
+  low: '#10B981',
+  medium: '#F59E0B',
+  high: '#EF4444',
+  critical: '#7C2D12'
+};
+
+const nodeTypes = {
+  server: { symbol: '🔲', size: 20 },
+  network: { symbol: '🌐', size: 25 },
+  endpoint: { symbol: '💻', size: 15 },
+  cloud: { symbol: '☁️', size: 30 }
+};
+
 const ThreatMap: React.FC<ThreatMapProps> = ({
   data,
   width = 800,
@@ -29,20 +44,6 @@ const ThreatMap: React.FC<ThreatMapProps> = ({
 }) => {
   const svgRef = useRef<SVGSVGElement>(null);
   const [selectedNode, setSelectedNode] = useState<ThreatNode | null>(null);
-
-  const severityColors = {
-    low: '#10B981',
-    medium: '#F59E0B',
-    high: '#EF4444',
-    critical: '#7C2D12'
-  };
-
-  const nodeTypes = {
-    server: { symbol: '🔲', size: 20 },
-    network: { symbol: '🌐', size: 25 },
-    endpoint: { symbol: '💻', size: 15 },
-    cloud: { symbol: '☁️', size: 30 }
-  };
 
   useEffect(() => {
     if (!data || !svgRef.current) return;
@@ -207,7 +208,7 @@ const ThreatMap: React.FC<ThreatMapProps> = ({
       simulation.stop();
       hideTooltip();
     };
-  }, [data, width, height, onNodeClick]);
+  }, [data, width, height, onNodeClick]); // Removed nodeTypes and severityColors
 
   return (
     <motion.div
