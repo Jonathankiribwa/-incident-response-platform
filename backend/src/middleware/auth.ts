@@ -35,8 +35,20 @@ export const authMiddleware = async (
       return;
     }
 
+    // Define a type for the decoded JWT payload
+    interface JwtPayload {
+      id: string;
+      email: string;
+      role: string;
+      organizationId: string;
+      permissions?: string[];
+      // Add other fields that might be in your JWT
+      iat: number; // Issued at
+      exp: number; // Expiration time
+    }
+
     // Verify JWT token
-    const decoded = jwt.verify(token, jwtSecret) as any;
+    const decoded = jwt.verify(token, jwtSecret) as JwtPayload;
     
     // Check if token is blacklisted in Redis
     const redisClient = getRedisClient();

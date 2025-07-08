@@ -2,7 +2,7 @@ import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { createUser, findUserByEmail } from '../models/user';
 import bcrypt from 'bcryptjs';
-import { AuthenticatedRequest } from '../middleware/auth';
+import { AuthenticatedRequest, authMiddleware } from '../middleware/auth'; // Imported authMiddleware
 import { getDatabase } from '../config/database';
 import crypto from 'crypto';
 import { sendEmail } from '../utils/email';
@@ -59,7 +59,7 @@ router.post('/register', async (req, res) => {
 });
 
 // /api/auth/profile
-router.get('/profile', require('../middleware/auth').authMiddleware, (req: AuthenticatedRequest, res) => {
+router.get('/profile', authMiddleware, (req: AuthenticatedRequest, res) => { // Changed to use imported authMiddleware
   // req.user is set by authMiddleware
   if (!req.user) {
     return res.status(401).json({ error: 'Not authenticated' });
@@ -68,7 +68,7 @@ router.get('/profile', require('../middleware/auth').authMiddleware, (req: Authe
 });
 
 // /api/auth/change-password
-router.post('/change-password', require('../middleware/auth').authMiddleware, async (req: AuthenticatedRequest, res) => {
+router.post('/change-password', authMiddleware, async (req: AuthenticatedRequest, res) => { // Changed to use imported authMiddleware
   const { oldPassword, newPassword } = req.body;
   if (!req.user) {
     return res.status(401).json({ error: 'Not authenticated' });
