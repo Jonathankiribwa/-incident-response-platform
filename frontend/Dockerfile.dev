@@ -4,9 +4,12 @@ FROM node:18-alpine
 # Set the working directory
 WORKDIR /app
 
-# Install dependencies
+# Install dependencies (including devDependencies)
 COPY package.json package-lock.json ./
-RUN npm install
+RUN npm install --include=dev
+
+# Removed global craco install to avoid conflicts
+# RUN npm install -g @craco/craco
 
 # Copy the rest of the application code
 COPY . .
@@ -14,5 +17,5 @@ COPY . .
 # Expose the port the app runs on
 EXPOSE 3000
 
-# Start the development server
+# Start the development server using craco (configured in package.json)
 CMD ["npm", "start"] 

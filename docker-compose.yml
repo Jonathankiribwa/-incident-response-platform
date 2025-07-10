@@ -100,9 +100,9 @@ services:
       - postgres
       - redis
       - kafka
-    volumes:
-      - ./backend:/app
-      - /app/node_modules
+    # volumes:
+    #   - ./backend:/app
+    #   - /app/node_modules
     networks:
       - incident_response_network
 
