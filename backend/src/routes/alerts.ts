@@ -14,9 +14,9 @@ router.get('/', async (req: AuthenticatedRequest, res) => {
     if (req.query['type']) filters['type'] = req.query['type'] as string;
     if (req.user?.organizationId) filters['organization_id'] = req.user.organizationId;
     const alerts = await listAlerts(filters);
-    res.json({ alerts });
+    return res.json({ alerts });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch alerts' });
+    return res.status(500).json({ error: 'Failed to fetch alerts' });
   }
 });
 
@@ -31,7 +31,7 @@ router.post('/', async (req: AuthenticatedRequest, res) => {
     });
 
     // Publish to Kafka
-    await sendKafkaMessage('alerts', alert, alert.id);
+    await sendKafkaMessage('alerts', alert as unknown as Record<string, unknown>, alert.id);
 
     // Call ML pipeline for classification and runbook suggestion (placeholder URL)
     try {
@@ -42,7 +42,7 @@ router.post('/', async (req: AuthenticatedRequest, res) => {
         body: JSON.stringify({ alert }),
       });
       if (mlResponse.ok) {
-        const mlData = await mlResponse.json();
+        await mlResponse.json();
         // Optionally, update alert with classification/suggestion here
         // e.g., await updateAlertClassification(alert.id, mlData.classification, mlData.suggestion);
       }
@@ -51,9 +51,9 @@ router.post('/', async (req: AuthenticatedRequest, res) => {
       console.error('ML pipeline call failed:', mlError);
     }
 
-    res.status(201).json({ alert });
+    return res.status(201).json({ alert });
   } catch (error) {
-    res.status(400).json({ error: 'Failed to create alert' });
+    return res.status(400).json({ error: 'Failed to create alert' });
   }
 });
 
@@ -62,9 +62,9 @@ router.get('/:id', async (req, res) => {
   try {
     const alert = await getAlertById(req.params.id);
     if (!alert) return res.status(404).json({ error: 'Alert not found' });
-    res.json({ alert });
+    return res.json({ alert });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch alert' });
+    return res.status(500).json({ error: 'Failed to fetch alert' });
   }
 });
 
@@ -75,9 +75,9 @@ router.patch('/:id', async (req, res) => {
     if (!status) return res.status(400).json({ error: 'Status is required' });
     const alert = await updateAlertStatus(req.params.id, status);
     if (!alert) return res.status(404).json({ error: 'Alert not found' });
-    res.json({ alert });
+    return res.json({ alert });
   } catch (error) {
-    res.status(400).json({ error: 'Failed to update alert' });
+    return res.status(400).json({ error: 'Failed to update alert' });
   }
 });
 

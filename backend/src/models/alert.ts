@@ -1,4 +1,3 @@
-import { Pool } from 'pg';
 import { getDatabase } from '../config/database';
 
 export interface Alert {

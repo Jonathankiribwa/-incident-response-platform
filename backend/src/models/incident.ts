@@ -11,6 +11,11 @@ export interface Incident {
   comments: Array<{ user: string; comment: string; timestamp: string }>;
   alerts: string[];
   organization_id: string;
+  assigned_team?: string;
+  shift?: 'Day' | 'Night' | 'Swing';
+  resolution_notes?: string;
+  resolved_by?: string;
+  resolved_at?: string;
   created_at: string;
   updated_at: string;
 }
@@ -18,8 +23,8 @@ export interface Incident {
 export async function createIncident(incident: Omit<Incident, 'id' | 'created_at' | 'updated_at'>): Promise<Incident> {
   const db = getDatabase();
   const result = await db.query(
-    `INSERT INTO incidents (title, description, status, severity, tags, assignee, comments, alerts, organization_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `INSERT INTO incidents (title, description, status, severity, tags, assignee, comments, alerts, organization_id, assigned_team, shift, resolution_notes, resolved_by, resolved_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
      RETURNING *`,
     [
       incident.title,
@@ -30,7 +35,12 @@ export async function createIncident(incident: Omit<Incident, 'id' | 'created_at
       incident.assignee,
       JSON.stringify(incident.comments || []),
       incident.alerts,
-      incident.organization_id
+      incident.organization_id,
+      incident.assigned_team || null,
+      incident.shift || null,
+      incident.resolution_notes || null,
+      incident.resolved_by || null,
+      incident.resolved_at || null
     ]
   );
   return result.rows[0];
@@ -59,16 +69,42 @@ export async function listIncidents(filters: Partial<Incident> = {}): Promise<In
     query += ` AND organization_id = $${idx++}`;
     params.push(filters.organization_id);
   }
+  if (filters.assigned_team) {
+    query += ` AND assigned_team = $${idx++}`;
+    params.push(filters.assigned_team);
+  }
+  if (filters.shift) {
+    query += ` AND shift = $${idx++}`;
+    params.push(filters.shift);
+  }
   query += ' ORDER BY created_at DESC LIMIT 100';
   const result = await db.query(query, params);
   return result.rows;
 }
 
-export async function updateIncidentStatus(id: string, status: Incident['status']): Promise<Incident | null> {
+export async function updateIncidentStatus(id: string, status: Incident['status'], resolution_notes?: string, resolved_by?: string): Promise<Incident | null> {
+  const db = getDatabase();
+  if (status === 'resolved' || status === 'closed') {
+    if (!resolution_notes || !resolved_by) throw new Error('Resolution notes and resolved_by are required');
+    const result = await db.query(
+      'UPDATE incidents SET status = $1, resolution_notes = $2, resolved_by = $3, resolved_at = NOW(), updated_at = NOW() WHERE id = $4 RETURNING *',
+      [status, resolution_notes, resolved_by, id]
+    );
+    return result.rows[0] || null;
+  } else {
+    const result = await db.query(
+      'UPDATE incidents SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *',
+      [status, id]
+    );
+    return result.rows[0] || null;
+  }
+}
+
+export async function updateIncidentTeamAndShift(id: string, assigned_team: string, shift: 'Day' | 'Night' | 'Swing'): Promise<Incident | null> {
   const db = getDatabase();
   const result = await db.query(
-    'UPDATE incidents SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *',
-    [status, id]
+    'UPDATE incidents SET assigned_team = $1, shift = $2, updated_at = NOW() WHERE id = $3 RETURNING *',
+    [assigned_team, shift, id]
   );
   return result.rows[0] || null;
 }
@@ -105,4 +141,21 @@ export async function assignIncident(id: string, assignee: string): Promise<Inci
     [assignee, id]
   );
   return result.rows[0] || null;
+}
+
+export async function logAuditAction(incidentId: string, action: string, actor: string, details: string) {
+  const db = getDatabase();
+  await db.query(
+    'INSERT INTO audit_log (incident_id, action, actor, details) VALUES ($1, $2, $3, $4)',
+    [incidentId, action, actor, details]
+  );
+}
+
+export async function getAuditTrail(incidentId: string) {
+  const db = getDatabase();
+  const result = await db.query(
+    'SELECT * FROM audit_log WHERE incident_id = $1 ORDER BY created_at ASC',
+    [incidentId]
+  );
+  return result.rows;
 } 

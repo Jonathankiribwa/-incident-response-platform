@@ -24,6 +24,12 @@ export async function findUserByEmail(email: string): Promise<User | null> {
   return result.rows[0] || null;
 }
 
+export async function findUserById(id: string): Promise<User | null> {
+  const db = getDatabase();
+  const result = await db.query('SELECT * FROM users WHERE id = $1', [id]);
+  return result.rows[0] || null;
+}
+
 export async function listUsers(): Promise<User[]> {
   const db = getDatabase();
   const result = await db.query('SELECT id, email, role FROM users', []);

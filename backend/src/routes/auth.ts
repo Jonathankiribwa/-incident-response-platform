@@ -30,13 +30,13 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials.' });
     }
     const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '1h' });
-    res.status(200).json({
+    return res.status(200).json({
       message: 'Login successful',
       token,
       user: { id: user.id, email: user.email, role: user.role }
     });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    return res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -52,9 +52,9 @@ router.post('/register', async (req, res) => {
       return res.status(409).json({ error: 'User already exists.' });
     }
     const user = await createUser(email, password);
-    res.status(201).json({ message: 'User registered successfully', user: { id: user.id, email: user.email, role: user.role } });
+    return res.status(201).json({ message: 'User registered successfully', user: { id: user.id, email: user.email, role: user.role } });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    return res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -64,7 +64,7 @@ router.get('/profile', authMiddleware, (req: AuthenticatedRequest, res) => { // 
   if (!req.user) {
     return res.status(401).json({ error: 'Not authenticated' });
   }
-  res.json({ user: req.user });
+  return res.json({ user: req.user });
 });
 
 // /api/auth/change-password
@@ -85,9 +85,9 @@ router.post('/change-password', authMiddleware, async (req: AuthenticatedRequest
     if (!match) return res.status(401).json({ error: 'Old password is incorrect' });
     const hashed = await bcrypt.hash(newPassword, 10);
     await db.query('UPDATE users SET password = $1 WHERE id = $2', [hashed, req.user.id]);
-    res.json({ message: 'Password changed successfully' });
+    return res.json({ message: 'Password changed successfully' });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    return res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -102,9 +102,9 @@ router.post('/request-reset', async (req, res) => {
     resetTokens[token] = user.id;
     const resetLink = `http://localhost:3000/reset-password?token=${token}`;
     await sendEmail(email, 'Password Reset', `Reset your password: ${resetLink}`, `<a href="${resetLink}">Reset Password</a>`);
-    res.json({ message: 'Password reset link sent (check your email)', token });
+    return res.json({ message: 'Password reset link sent (check your email)', token });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    return res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -119,9 +119,9 @@ router.post('/reset-password', async (req, res) => {
     const hashed = await bcrypt.hash(newPassword, 10);
     await db.query('UPDATE users SET password = $1 WHERE id = $2', [hashed, userId]);
     delete resetTokens[token];
-    res.json({ message: 'Password reset successful' });
+    return res.json({ message: 'Password reset successful' });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    return res.status(500).json({ error: 'Server error' });
   }
 });
 

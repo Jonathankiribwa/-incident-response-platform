@@ -3,8 +3,8 @@ import { authMiddleware, requireRole } from '../middleware/auth';
 const router = Router();
 
 // Example: /api/audit
-router.get('/', authMiddleware, requireRole(['admin']), (req, res) => {
-  res.json({
+router.get('/', authMiddleware, requireRole(['admin']), (_req, res) => {
+  return res.json({
     logs: [
       { id: 1, action: 'User login', user: 'admin@example.com', timestamp: '2024-06-08T10:00:00Z' },
       { id: 2, action: 'User created', user: 'admin@example.com', timestamp: '2024-06-08T10:05:00Z' },

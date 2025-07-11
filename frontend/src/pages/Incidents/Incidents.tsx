@@ -34,6 +34,21 @@ import Checkbox from '@mui/material/Checkbox';
 import Tooltip from '@mui/material/Tooltip';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
+import Snackbar from '@mui/material/Snackbar';
+import { useAuth } from '../../hooks/useAuth';
+import Timeline from '@mui/lab/Timeline';
+import TimelineItem from '@mui/lab/TimelineItem';
+import TimelineSeparator from '@mui/lab/TimelineSeparator';
+import TimelineConnector from '@mui/lab/TimelineConnector';
+import TimelineContent from '@mui/lab/TimelineContent';
+import TimelineDot from '@mui/lab/TimelineDot';
+import AssignmentIndIcon from '@mui/icons-material/AssignmentInd';
+import EditNoteIcon from '@mui/icons-material/EditNote';
+import CommentIcon from '@mui/icons-material/Comment';
+import LabelIcon from '@mui/icons-material/Label';
+import AutorenewIcon from '@mui/icons-material/Autorenew';
+import InfoIcon from '@mui/icons-material/Info';
+import DialogContentText from '@mui/material/DialogContentText';
 
 const mockIncidents = [
   {
@@ -89,15 +104,127 @@ const userOptions = [
   'carol@example.com',
 ];
 
+const teamOptions = [
+  'Maintenance',
+  'IT',
+  'Operations',
+  'Security',
+  'Engineering',
+  'Logistics',
+];
+const shiftOptions = ['Day', 'Night', 'Swing'];
+
 const SOCKET_URL = process.env.REACT_APP_SOCKET_URL || 'http://localhost:8000';
 
+// Add color mapping for ML labels
+const mlLabelColors: Record<string, string> = {
+  Critical: '#d32f2f',
+  High: '#ef5350',
+  Medium: '#42a5f5',
+  Low: '#b2dfdb',
+};
+
+// Extend incident type to include ML fields and new team/shift fields
+interface IncidentWithML {
+  id: string;
+  title: string;
+  status: string;
+  severity: string;
+  assignee: string;
+  description: string;
+  created_at: string;
+  ml_label?: string;
+  ml_priority?: number;
+  tags?: string[];
+  comments?: any[];
+  assigned_team?: string;
+  shift?: 'Day' | 'Night' | 'Swing';
+  resolution_notes?: string;
+  resolved_by?: string;
+  resolved_at?: string;
+}
+
+// Operator checklists for incident types
+const incidentChecklists: Record<string, string[]> = {
+  'Boiler Overheating': [
+    'Check temperature sensor calibration',
+    'Inspect boiler for leaks or blockages',
+    'Notify maintenance team',
+    'Log incident in maintenance system',
+  ],
+  'Unauthorized VPN Login': [
+    'Verify user identity',
+    'Check access logs for anomalies',
+    'Reset user credentials if needed',
+    'Notify IT security',
+  ],
+  'Conveyor Jam': [
+    'Stop conveyor safely',
+    'Inspect jam location',
+    'Clear obstruction',
+    'Restart conveyor and monitor',
+  ],
+  'Supply Chain Delay': [
+    'Contact supplier for update',
+    'Adjust production schedule',
+    'Notify logistics team',
+  ],
+  'Power Fluctuation': [
+    'Check voltage readings',
+    'Inspect rolling mill electricals',
+    'Notify electrical maintenance',
+  ],
+  'Water Leak Detected': [
+    'Locate leak source',
+    'Shut off water supply if needed',
+    'Notify maintenance',
+    'Document repair',
+  ],
+  'PLC Communication Failure': [
+    'Check PLC network connections',
+    'Restart PLC if safe',
+    'Escalate to automation engineer',
+  ],
+  'Gas Pressure Anomaly': [
+    'Check gas line pressure sensors',
+    'Inspect for leaks',
+    'Notify safety officer',
+  ],
+  'Emergency Stop Triggered': [
+    'Verify operator safety',
+    'Inspect press line for hazards',
+    'Reset emergency stop',
+    'Resume operations if safe',
+  ],
+};
+
+// Helper to get icon and color for audit action
+const getAuditIcon = (action: string) => {
+  switch (action) {
+    case 'assign':
+      return { icon: <AssignmentIndIcon color="primary" />, color: 'primary' };
+    case 'status_change':
+      return { icon: <AutorenewIcon sx={{ color: '#ffa726' }} />, color: 'warning' };
+    case 'comment':
+      return { icon: <CommentIcon sx={{ color: '#66bb6a' }} />, color: 'success' };
+    case 'tag':
+      return { icon: <LabelIcon sx={{ color: '#7e57c2' }} />, color: 'secondary' };
+    case 'edit':
+      return { icon: <EditNoteIcon sx={{ color: '#42a5f5' }} />, color: 'info' };
+    default:
+      return { icon: <InfoIcon color="disabled" />, color: 'default' };
+  }
+};
+
 const Incidents: React.FC = () => {
-  const [incidents, setIncidents] = useState(mockIncidents);
+  const [incidents, setIncidents] = useState<IncidentWithML[]>(mockIncidents);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState('');
   const [filterSeverity, setFilterSeverity] = useState('');
-  const [selectedIncident, setSelectedIncident] = useState<any | null>(null);
+  const [filterTeam, setFilterTeam] = useState('');
+  const [filterShift, setFilterShift] = useState('');
+  const [selectedIncident, setSelectedIncident] = useState<IncidentWithML | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [newIncident, setNewIncident] = useState({
@@ -105,6 +232,8 @@ const Incidents: React.FC = () => {
     description: '',
     severity: 'medium',
     assignee: '',
+    assigned_team: '',
+    shift: '',
   });
   const [actionLoading, setActionLoading] = useState(false);
   const [comment, setComment] = useState('');
@@ -116,6 +245,24 @@ const Incidents: React.FC = () => {
   const [startDate, setStartDate] = useState<Dayjs | null>(null);
   const [endDate, setEndDate] = useState<Dayjs | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
+  const [checklistState, setChecklistState] = useState<{ [key: string]: boolean[] }>({});
+  const { currentUser } = useAuth();
+  const [assignmentNotification, setAssignmentNotification] = useState<string | null>(null);
+  const [auditLog, setAuditLog] = useState<any[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditError, setAuditError] = useState<string | null>(null);
+  const [auditActionFilter, setAuditActionFilter] = useState<string>('all');
+  const [auditSearch, setAuditSearch] = useState<string>('');
+  const isAdminOrEngineer = currentUser && (currentUser.role === 'admin' || currentUser.role === 'engineer');
+  const [editTeam, setEditTeam] = useState<string>('');
+  const [editShift, setEditShift] = useState<string>('');
+  const [editLoading, setEditLoading] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editSuccess, setEditSuccess] = useState(false);
+  const [resolutionDialogOpen, setResolutionDialogOpen] = useState(false);
+  const [pendingStatus, setPendingStatus] = useState<string>('');
+  const [resolutionNote, setResolutionNote] = useState('');
+  const [resolutionError, setResolutionError] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -123,6 +270,8 @@ const Incidents: React.FC = () => {
     const params = [];
     if (filterStatus) params.push(`status=${filterStatus}`);
     if (filterSeverity) params.push(`severity=${filterSeverity}`);
+    if (filterTeam) params.push(`assigned_team=${encodeURIComponent(filterTeam)}`);
+    if (filterShift) params.push(`shift=${encodeURIComponent(filterShift)}`);
     if (search) params.push(`search=${encodeURIComponent(search)}`);
     if (startDate) params.push(`startDate=${startDate.toISOString()}`);
     if (endDate) params.push(`endDate=${endDate.toISOString()}`);
@@ -140,7 +289,7 @@ const Incidents: React.FC = () => {
         setError('Failed to load live data, showing mock data.');
       })
       .finally(() => setLoading(false));
-  }, [filterStatus, filterSeverity, search, startDate, endDate, sortBy, sortOrder]);
+  }, [filterStatus, filterSeverity, filterTeam, filterShift, search, startDate, endDate, sortBy, sortOrder]);
 
   useEffect(() => {
     // Connect to Socket.io for real-time updates
@@ -159,12 +308,50 @@ const Incidents: React.FC = () => {
           }
         });
       });
+      socket.on('incident-assigned', (payload: any) => {
+        if (currentUser && payload.assignee === currentUser.email) {
+          setAssignmentNotification(`You have been assigned to incident: ${payload.incident.title}`);
+        }
+      });
     }
     return () => {
       socketRef.current?.disconnect();
       socketRef.current = null;
     };
-  }, []);
+  }, [currentUser]);
+
+  // Fetch audit log when selectedIncident changes
+  useEffect(() => {
+    if (!selectedIncident) return;
+    setAuditLoading(true);
+    setAuditError(null);
+    fetch(`/api/incidents/${selectedIncident.id}/audit`)
+      .then(res => res.ok ? res.json() : Promise.reject('Failed to fetch audit log'))
+      .then(data => setAuditLog(data.audit || []))
+      .catch(() => setAuditError('Failed to load audit log.'))
+      .finally(() => setAuditLoading(false));
+  }, [selectedIncident]);
+
+  // When opening details dialog, initialize edit fields
+  useEffect(() => {
+    if (selectedIncident) {
+      setEditTeam(selectedIncident.assigned_team || '');
+      setEditShift(selectedIncident.shift || '');
+      setEditError(null);
+      setEditSuccess(false);
+    }
+  }, [selectedIncident]);
+
+  // Compute filtered audit log
+  const auditActionTypes = Array.from(new Set(auditLog.map(a => a.action)));
+  const filteredAuditLog = auditLog.filter(a => {
+    const matchesAction = auditActionFilter === 'all' || a.action === auditActionFilter;
+    const search = auditSearch.trim().toLowerCase();
+    const matchesSearch = !search ||
+      a.actor?.toLowerCase().includes(search) ||
+      a.details?.toLowerCase().includes(search);
+    return matchesAction && matchesSearch;
+  });
 
   const handleRowClick = (incident: any) => {
     setSelectedIncident(incident);
@@ -182,7 +369,15 @@ const Incidents: React.FC = () => {
     setActionLoading(false);
   };
 
+  // Handle status change, prompt for resolution note if needed
   const handleTriage = async (incident: any, status: string) => {
+    if ((status === 'resolved' || status === 'closed')) {
+      setPendingStatus(status);
+      setResolutionDialogOpen(true);
+      setResolutionNote('');
+      setResolutionError(null);
+      return;
+    }
     setActionLoading(true);
     await fetch(`/api/incidents/${incident.id}`, {
       method: 'PATCH',
@@ -190,6 +385,32 @@ const Incidents: React.FC = () => {
       body: JSON.stringify({ status }),
     });
     setIncidents((prev) => prev.map((i) => i.id === incident.id ? { ...i, status } : i));
+    setActionLoading(false);
+  };
+
+  // Save resolution note and status
+  const handleSaveResolution = async () => {
+    if (!resolutionNote.trim()) {
+      setResolutionError('Resolution note is required.');
+      return;
+    }
+    if (!selectedIncident) return;
+    setActionLoading(true);
+    setResolutionError(null);
+    try {
+      const res = await fetch(`/api/incidents/${selectedIncident.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: pendingStatus, resolution_notes: resolutionNote }),
+      });
+      if (!res.ok) throw new Error('Failed to resolve incident');
+      const data = await res.json();
+      setSelectedIncident(data.incident);
+      setIncidents((prev) => prev.map((i) => i.id === data.incident.id ? data.incident : i));
+      setResolutionDialogOpen(false);
+    } catch (e) {
+      setResolutionError('Failed to resolve incident');
+    }
     setActionLoading(false);
   };
 
@@ -204,7 +425,7 @@ const Incidents: React.FC = () => {
       const data = await res.json();
       setIncidents((prev) => [data.incident, ...prev]);
       setCreateOpen(false);
-      setNewIncident({ title: '', description: '', severity: 'medium', assignee: '' });
+      setNewIncident({ title: '', description: '', severity: 'medium', assignee: '', assigned_team: '', shift: '' });
     }
     setActionLoading(false);
   };
@@ -241,6 +462,29 @@ const Incidents: React.FC = () => {
       setTagInput('');
     }
     setActionLoading(false);
+  };
+
+  const handleSaveTeamShift = async () => {
+    if (!selectedIncident) return;
+    setEditLoading(true);
+    setEditError(null);
+    setEditSuccess(false);
+    try {
+      const res = await fetch(`/api/incidents/${selectedIncident.id}/team-shift`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assigned_team: editTeam, shift: editShift }),
+      });
+      if (!res.ok) throw new Error('Failed to update');
+      const data = await res.json();
+      setSelectedIncident(data.incident);
+      setIncidents(prev => prev.map(i => i.id === data.incident.id ? data.incident : i));
+      setEditSuccess(true);
+    } catch (e) {
+      setEditError('Failed to update team/shift');
+    } finally {
+      setEditLoading(false);
+    }
   };
 
   // Sorting handler
@@ -313,6 +557,33 @@ const Incidents: React.FC = () => {
     doc.save('incidents.pdf');
   };
 
+  // Export audit log as CSV
+  const handleExportAuditCSV = () => {
+    if (!filteredAuditLog.length) return;
+    const csvRows = [
+      'Timestamp,Action,Actor,Details',
+      ...filteredAuditLog.map(a => `"${a.created_at}","${a.action}","${a.actor}","${a.details?.replace(/"/g, '""')}"`)
+    ];
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `incident_${selectedIncident?.id}_audit.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
+  // Export audit log as PDF
+  const handleExportAuditPDF = () => {
+    if (!filteredAuditLog.length) return;
+    const doc = new jsPDF();
+    // @ts-ignore
+    doc.autoTable({
+      head: [['Timestamp', 'Action', 'Actor', 'Details']],
+      body: filteredAuditLog.map(a => [a.created_at, a.action, a.actor, a.details]),
+    });
+    doc.save(`incident_${selectedIncident?.id}_audit.pdf`);
+  };
+
   return (
     <Box
       sx={{
@@ -349,6 +620,32 @@ const Incidents: React.FC = () => {
           <MenuItem value="">All</MenuItem>
           {severityOptions.map(severity => (
             <MenuItem key={severity} value={severity}>{severity}</MenuItem>
+          ))}
+        </TextField>
+        <TextField
+          select
+          label="Team"
+          value={filterTeam}
+          onChange={e => setFilterTeam(e.target.value)}
+          size="small"
+          sx={{ minWidth: 140 }}
+        >
+          <MenuItem value="">All</MenuItem>
+          {teamOptions.map(team => (
+            <MenuItem key={team} value={team}>{team}</MenuItem>
+          ))}
+        </TextField>
+        <TextField
+          select
+          label="Shift"
+          value={filterShift}
+          onChange={e => setFilterShift(e.target.value)}
+          size="small"
+          sx={{ minWidth: 120 }}
+        >
+          <MenuItem value="">All</MenuItem>
+          {shiftOptions.map(shift => (
+            <MenuItem key={shift} value={shift}>{shift}</MenuItem>
           ))}
         </TextField>
         <TextField
@@ -459,6 +756,8 @@ const Incidents: React.FC = () => {
                   Assignee
                 </TableSortLabel>
               </TableCell>
+              <TableCell>Team</TableCell>
+              <TableCell>Shift</TableCell>
               <TableCell align="right">
                 <TableSortLabel
                   active={sortBy === 'created_at'}
@@ -468,6 +767,8 @@ const Incidents: React.FC = () => {
                   Created
                 </TableSortLabel>
               </TableCell>
+              <TableCell>ML Priority</TableCell>
+              <TableCell>ML Score</TableCell>
               <TableCell align="right">Actions</TableCell>
             </TableRow>
           </TableHead>
@@ -521,9 +822,27 @@ const Incidents: React.FC = () => {
                     </Select>
                   </FormControl>
                 </TableCell>
+                <TableCell>{incident.assigned_team || '-'}</TableCell>
+                <TableCell>{incident.shift || '-'}</TableCell>
                 <TableCell align="right">
                   <Chip label="View" clickable sx={{ mr: 1 }} onClick={e => { e.stopPropagation(); handleRowClick(incident); }} />
                   {actionLoading && <CircularProgress size={20} />}
+                </TableCell>
+                <TableCell>
+                  {incident.ml_label && (
+                    <Chip
+                      label={incident.ml_label}
+                      sx={{
+                        bgcolor: mlLabelColors[incident.ml_label] || '#bdbdbd',
+                        color: '#fff',
+                        fontWeight: 600,
+                        textTransform: 'capitalize',
+                      }}
+                    />
+                  )}
+                </TableCell>
+                <TableCell>
+                  {typeof incident.ml_priority === 'number' ? incident.ml_priority : '-'}
                 </TableCell>
               </TableRow>
             ))}
@@ -590,6 +909,32 @@ const Incidents: React.FC = () => {
               ))}
             </Select>
           </FormControl>
+          <FormControl fullWidth margin="normal">
+            <InputLabel>Assigned Team</InputLabel>
+            <Select
+              value={newIncident.assigned_team}
+              label="Assigned Team"
+              onChange={e => setNewIncident({ ...newIncident, assigned_team: e.target.value })}
+            >
+              <MenuItem value="">Unassigned</MenuItem>
+              {teamOptions.map(team => (
+                <MenuItem key={team} value={team}>{team}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <FormControl fullWidth margin="normal">
+            <InputLabel>Shift</InputLabel>
+            <Select
+              value={newIncident.shift}
+              label="Shift"
+              onChange={e => setNewIncident({ ...newIncident, shift: e.target.value })}
+            >
+              <MenuItem value="">Unassigned</MenuItem>
+              {shiftOptions.map(shift => (
+                <MenuItem key={shift} value={shift}>{shift}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setCreateOpen(false)}>Cancel</Button>
@@ -606,6 +951,48 @@ const Incidents: React.FC = () => {
               <Typography>Severity: {selectedIncident.severity}</Typography>
               <Typography>Assignee: {selectedIncident.assignee}</Typography>
               <Typography>Description: {selectedIncident.description}</Typography>
+              {isAdminOrEngineer ? (
+                <Box display="flex" gap={2} alignItems="center" mb={1}>
+                  <FormControl sx={{ minWidth: 140 }} size="small">
+                    <InputLabel>Team</InputLabel>
+                    <Select
+                      value={editTeam}
+                      label="Team"
+                      onChange={e => setEditTeam(e.target.value)}
+                      disabled={editLoading}
+                    >
+                      <MenuItem value="">Unassigned</MenuItem>
+                      {teamOptions.map(team => (
+                        <MenuItem key={team} value={team}>{team}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <FormControl sx={{ minWidth: 120 }} size="small">
+                    <InputLabel>Shift</InputLabel>
+                    <Select
+                      value={editShift}
+                      label="Shift"
+                      onChange={e => setEditShift(e.target.value)}
+                      disabled={editLoading}
+                    >
+                      <MenuItem value="">Unassigned</MenuItem>
+                      {shiftOptions.map(shift => (
+                        <MenuItem key={shift} value={shift}>{shift}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <Button onClick={handleSaveTeamShift} variant="contained" size="small" disabled={editLoading || (editTeam === selectedIncident.assigned_team && editShift === selectedIncident.shift)}>
+                    {editLoading ? <CircularProgress size={18} /> : 'Save'}
+                  </Button>
+                  {editSuccess && <Typography color="success.main" variant="caption">Saved!</Typography>}
+                  {editError && <Typography color="error" variant="caption">{editError}</Typography>}
+                </Box>
+              ) : (
+                <>
+                  <Typography>Team: {selectedIncident.assigned_team || '-'}</Typography>
+                  <Typography>Shift: {selectedIncident.shift || '-'}</Typography>
+                </>
+              )}
               <Box mt={2} mb={1}>
                 <Typography variant="subtitle1">Tags:</Typography>
                 {selectedIncident.tags && selectedIncident.tags.map((tag: string) => (
@@ -646,6 +1033,132 @@ const Incidents: React.FC = () => {
                   </IconButton>
                 </Box>
               </Box>
+              {selectedIncident && (
+                <Box mt={2}>
+                  <Typography variant="subtitle2">ML Priority:</Typography>
+                  {selectedIncident.ml_label && (
+                    <Chip
+                      label={selectedIncident.ml_label}
+                      sx={{
+                        bgcolor: mlLabelColors[selectedIncident.ml_label] || '#bdbdbd',
+                        color: '#fff',
+                        fontWeight: 600,
+                        textTransform: 'capitalize',
+                        mr: 1,
+                      }}
+                    />
+                  )}
+                  <Typography variant="body2" display="inline">
+                    {typeof selectedIncident.ml_priority === 'number' ? `Score: ${selectedIncident.ml_priority}` : ''}
+                  </Typography>
+                </Box>
+              )}
+              {selectedIncident && (
+                <Box mt={2}>
+                  <Typography variant="subtitle2" mt={2}>Operator Checklist:</Typography>
+                  {(() => {
+                    const steps = incidentChecklists[selectedIncident.title] || [];
+                    if (!steps.length) return <Typography variant="body2">No checklist available for this incident type.</Typography>;
+                    const state = checklistState[selectedIncident.id] || Array(steps.length).fill(false);
+                    return (
+                      <Box>
+                        {steps.map((step, idx) => (
+                          <Box key={idx} display="flex" alignItems="center" gap={1}>
+                            <Checkbox
+                              checked={state[idx]}
+                              onChange={e => {
+                                const updated = [...state];
+                                updated[idx] = e.target.checked;
+                                setChecklistState(s => ({ ...s, [selectedIncident.id]: updated }));
+                              }}
+                            />
+                            <Typography variant="body2" sx={{ textDecoration: state[idx] ? 'line-through' : 'none' }}>{step}</Typography>
+                          </Box>
+                        ))}
+                      </Box>
+                    );
+                  })()}
+                </Box>
+              )}
+              {selectedIncident && (
+                <Box mt={2}>
+                  <Typography variant="subtitle2">Resolution Notes:</Typography>
+                  {selectedIncident.resolution_notes && (
+                    <Typography variant="body2" sx={{ whiteSpace: 'pre-line' }}>{selectedIncident.resolution_notes}</Typography>
+                  )}
+                  <Typography variant="caption" color="text.secondary">
+                    Resolved by: {selectedIncident.resolved_by || '-'} on {selectedIncident.resolved_at ? new Date(selectedIncident.resolved_at).toLocaleString() : '-'}
+                  </Typography>
+                </Box>
+              )}
+              {/* Audit Timeline */}
+              <Box mt={3} mb={2}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>Audit Timeline</Typography>
+                {/* Filters */}
+                <Box display="flex" gap={2} alignItems="center" flexWrap="wrap" mb={1}>
+                  <Typography variant="body2">Filter:</Typography>
+                  <Chip
+                    label="All"
+                    color={auditActionFilter === 'all' ? 'primary' : 'default'}
+                    onClick={() => setAuditActionFilter('all')}
+                    size="small"
+                    sx={{ cursor: 'pointer' }}
+                  />
+                  {auditActionTypes.map(type => (
+                    <Chip
+                      key={type}
+                      label={type.replace(/_/g, ' ').toUpperCase()}
+                      color={auditActionFilter === type ? 'primary' : 'default'}
+                      onClick={() => setAuditActionFilter(type)}
+                      size="small"
+                      sx={{ cursor: 'pointer' }}
+                    />
+                  ))}
+                  <TextField
+                    size="small"
+                    placeholder="Search actor or details"
+                    value={auditSearch}
+                    onChange={e => setAuditSearch(e.target.value)}
+                    sx={{ minWidth: 180 }}
+                  />
+                  <Typography variant="caption" color="text.secondary" ml={1}>
+                    {filteredAuditLog.length} event{filteredAuditLog.length !== 1 ? 's' : ''}
+                  </Typography>
+                </Box>
+                {auditLoading ? (
+                  <Box display="flex" alignItems="center" gap={1}><CircularProgress size={20} /> Loading...</Box>
+                ) : auditError ? (
+                  <Typography color="error">{auditError}</Typography>
+                ) : filteredAuditLog.length === 0 ? (
+                  <Typography variant="body2">No audit events match your filter.</Typography>
+                ) : (
+                  <Timeline position="right" sx={{ p: 0 }}>
+                    {filteredAuditLog.map((a, idx) => {
+                      const { icon } = getAuditIcon(a.action);
+                      return (
+                        <TimelineItem key={a.id || idx}>
+                          <TimelineSeparator>
+                            <TimelineDot>
+                              {icon}
+                            </TimelineDot>
+                            {idx < filteredAuditLog.length - 1 && <TimelineConnector />}
+                          </TimelineSeparator>
+                          <TimelineContent>
+                            <Typography variant="body2" sx={{ fontWeight: 600 }}>{a.action.replace(/_/g, ' ').toUpperCase()}</Typography>
+                            <Typography variant="caption" color="text.secondary">{new Date(a.created_at).toLocaleString()}</Typography>
+                            <Typography variant="body2">By: {a.actor}</Typography>
+                            <Typography variant="body2" sx={{ whiteSpace: 'pre-line' }}>{a.details}</Typography>
+                          </TimelineContent>
+                        </TimelineItem>
+                      );
+                    })}
+                  </Timeline>
+                )}
+                <Box display="flex" gap={2} mt={1}>
+                  <Button onClick={handleExportAuditCSV} variant="outlined" size="small" disabled={!filteredAuditLog.length}>Export CSV</Button>
+                  <Button onClick={handleExportAuditPDF} variant="outlined" size="small" disabled={!filteredAuditLog.length}>Export PDF</Button>
+                </Box>
+              </Box>
             </Box>
           )}
         </DialogContent>
@@ -653,6 +1166,37 @@ const Incidents: React.FC = () => {
           <Button onClick={() => setDialogOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
+      <Dialog open={resolutionDialogOpen} onClose={() => setResolutionDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Resolution Note Required</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Please provide a resolution note before marking this incident as {pendingStatus}.
+          </DialogContentText>
+          <TextField
+            label="Resolution Note"
+            value={resolutionNote}
+            onChange={e => setResolutionNote(e.target.value)}
+            fullWidth
+            multiline
+            minRows={2}
+            margin="normal"
+            autoFocus
+            disabled={actionLoading}
+            error={!!resolutionError}
+            helperText={resolutionError}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setResolutionDialogOpen(false)} disabled={actionLoading}>Cancel</Button>
+          <Button onClick={handleSaveResolution} disabled={actionLoading || !resolutionNote.trim()} variant="contained">Save</Button>
+        </DialogActions>
+      </Dialog>
+      <Snackbar
+        open={!!assignmentNotification}
+        autoHideDuration={4000}
+        onClose={() => setAssignmentNotification(null)}
+        message={assignmentNotification}
+      />
       {loading && <Typography sx={{ mt: 2 }}>Loading...</Typography>}
       {error && <Typography color="error" sx={{ mt: 2 }}>{error}</Typography>}
     </Box>

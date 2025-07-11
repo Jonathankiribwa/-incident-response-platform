@@ -126,6 +126,7 @@ services:
       - ml_models:/app/models
     networks:
       - incident_response_network
+    mem_limit: 1g
 
   # Frontend Development Server
   frontend:
@@ -138,11 +139,14 @@ services:
     environment:
       REACT_APP_API_URL: http://localhost:8000
       REACT_APP_WS_URL: ws://localhost:8000
+      CHOKIDAR_USEPOLLING: 'true'
+      CHOKIDAR_INTERVAL: '1000'
     volumes:
       - ./frontend:/app
       - /app/node_modules
     depends_on:
       - backend
+    mem_limit: 1g
     networks:
       - incident_response_network
 

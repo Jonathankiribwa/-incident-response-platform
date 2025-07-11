@@ -3,8 +3,8 @@ import { authMiddleware } from '../middleware/auth';
 const router = Router();
 
 // Example: /api/dashboard
-router.get('/', authMiddleware, (req, res) => {
-  res.json({
+router.get('/', authMiddleware, (_req, res) => {
+  return res.json({
     incidentsByDay: [
       { name: 'Mon', incidents: 2 },
       { name: 'Tue', incidents: 5 },

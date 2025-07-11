@@ -41,12 +41,12 @@ export const errorHandler = (
 export const notFoundHandler = (
   req: Request,
   res: Response,
-  next: NextFunction
+  _next: NextFunction
 ): void => {
   const error: AppError = new Error(`Route ${req.originalUrl} not found`);
   error.statusCode = 404;
   error.isOperational = true;
-  next(error);
+  res.status(404).json({ error: `Route ${req.originalUrl} not found` });
 };
 
 type ExpressAsyncHandler = (
