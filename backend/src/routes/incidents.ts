@@ -15,7 +15,7 @@ import { AuthenticatedRequest } from '../middleware/auth';
 import { getDatabase } from '../config/database';
 import { randomInt } from 'crypto';
 import { sendEmail } from '../utils/email';
-import { findUserByEmail, findUserById } from '../models/user';
+import { findUserById } from '../models/user';
 
 const router = Router();
 
@@ -271,7 +271,7 @@ const incidentTemplates = [
 ];
 
 // GET /api/simulate/templates
-router.get('/api/simulate/templates', (req, res) => {
+router.get('/api/simulate/templates', (_req, res) => {
   res.json({ templates: incidentTemplates.map(t => t.type) });
 });
 
